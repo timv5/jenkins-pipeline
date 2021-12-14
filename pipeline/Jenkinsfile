@@ -1,0 +1,66 @@
+pipeline {
+
+    agent any
+
+    environment {
+
+        yourFirstMicroservice = "first-microservice-dir-name"
+        yourSecondMicroservice = "second-microservice-dir-name"
+        yourWebApp = "web-app-dir"
+        yourRepositoryCredentials = "nexus-credentials"
+        yourRepositoryServer = "host:port/"
+        dockerImage = ''
+        yourGitUrlFirstMicroservice = 'www.github.com'
+        yourGitUrlSecondMicroservice = 'www.github.com'
+        yourGitUrlWebApp = 'www.github.com'
+    }
+
+    stages {
+        stage('Workspace preparation') {
+            agent {label 'master'}
+            steps{
+                script{
+                    sh 'mkdir -p microservices/'+ yourFirstMicroservice
+                    sh 'mkdir -p microservices/'+ yourSecondMicroservice
+                    sh 'mkdir -p web/'+ yourWebApp
+                }
+            }
+        }
+
+        stage('Git code checkout') {
+            steps {
+                checkout([$class: 'GitSCM', branches: [[name: '*/master']], extensions: [[$class: 'RelativeTargetDirectory', relativeTargetDir: 'microservices/'+ yourFirstMicroservice]], userRemoteConfigs: [[credentialsId: 'github', url: yourGitUrlFirstMicroservice]]])
+                checkout([$class: 'GitSCM', branches: [[name: '*/master']], extensions: [[$class: 'RelativeTargetDirectory', relativeTargetDir: 'backend/'+ yourSecondMicroservice]], userRemoteConfigs: [[credentialsId: 'github', url: yourGitUrlSecondMicroservice]]])
+                checkout([$class: 'GitSCM', branches: [[name: '*/master']], extensions: [[$class: 'RelativeTargetDirectory', relativeTargetDir: 'frontend/'+ yourWebApp]], userRemoteConfigs: [[credentialsId: 'github', url: yourGitUrlWebApp]]])
+            }
+        }
+
+        stage('Building docker image') {
+            steps{
+                script {
+                    sh 'docker build --rm -f backend/'+ yourFirstMicroservice +'/.Dockerfile -t '+ yourFirstMicroservice +':latest ./microservices/'+ yourFirstMicroservice
+                    sh 'docker build --rm -f backend/'+ yourSecondMicroservice +'/.Dockerfile -t '+ yourSecondMicroservice +':latest ./microservices/'+ yourSecondMicroservice
+                    sh 'docker build --rm -f frontend/'+ yourWebApp +'/.Dockerfile -t '+ yourWebApp +':latest ./web/'+ yourWebApp
+                }
+            }
+        }
+
+        stage('Uploading images to Nexus') {
+            agent {label 'master'}
+            steps{
+                script {
+                    docker.withRegistry( 'http://'+yourRepositoryServer, yourRepositoryCredentials ) {
+                        sh 'docker tag '+ yourFirstMicroservice +' '+ yourRepositoryServer +''+ yourFirstMicroservice +':latest'
+                        sh 'docker push '+' '+ yourRepositoryServer +''+ yourFirstMicroservice +':latest'
+
+                        sh 'docker tag '+ yourSecondMicroservice +' '+ yourRepositoryServer +''+ yourSecondMicroservice +':latest'
+                        sh 'docker push '+' '+ yourRepositoryServer +''+ yourSecondMicroservice +':latest'
+
+                        sh 'docker tag '+ yourWebApp +' '+ yourRepositoryServer +''+ yourWebApp +':latest'
+                        sh 'docker push '+' '+ yourRepositoryServer +''+ yourWebApp +':latest'
+                    }
+                }
+            }
+        }
+    }
+}
